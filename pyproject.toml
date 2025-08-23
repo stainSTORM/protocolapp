@@ -1,0 +1,11 @@
+[project]
+name = "karlos"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "arkitekt-next[all]==0.25",
+    "arkitekt-server>=1.5.0",
+    "pytest>=8.4.1",
+]
