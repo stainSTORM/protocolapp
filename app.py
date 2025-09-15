@@ -136,7 +136,7 @@ def run_washing_protocol():
         run_washing_protocol,
     ]
 )
-def smart_logic_loopf(max_iterations=5):
+def smart_logic_loop(max_iterations=5):
     num_sliders = 1
 
     for slider in range(num_sliders):
@@ -184,13 +184,6 @@ def smart_logic_loopf(max_iterations=5):
         move_robot_slide_holder()
         drop_slider_in_tray(slider)
 
-    return
-
-
-@register
-def run_washing_protocol():
-    # Implement staining protocol logic here
-    log("Running staining protocol")
     return
 
 
