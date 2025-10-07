@@ -17,6 +17,12 @@ import numpy as np
 # by other apps or humans, we use standard python function and the ellipsis
 # (...) to indicate that the function is not implemented here.
 
+# when using the @protocol decorator, all functions are filtered that have the same
+# output and input types, so that they can be replaced by other implementations
+# in the future this will be more fine grained, e.g by passing which collections
+# the function should use to find implementations
+# e.g. @protocol(collections=["segmentation"])
+
 
 @protocol
 def move_robot_slide_holder():
