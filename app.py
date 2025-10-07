@@ -8,115 +8,87 @@ from kraph.api.schema import (
     create_protocol_event_category,
     create_structure_metric,
 )
-from mikro_next.api.schema import (
-    Image,
-    from_array_like,
-    PartialInstanceMaskViewInput,
-    create_reference_view,
-)
-from arkitekt_next import easy, register, log
+from mikro_next.api.schema import Image
+from arkitekt_next import easy, protocol, log, register
 import numpy as np
 
 
-@register
+@protocol
 def move_robot_slide_holder():
-    # Implement robot movement logic here
-    print("Moving robot slide holder")
-    return
+    "A function to move the robot to the slide holder"
+
+    ...
 
 
-@register
+@protocol
 def grip_slide_holder():
-    # Implement robot movement logic here
-    log("Gripping slide holder")
-    return
+    "A function to grip the slide holder"
+    ...
 
 
-@register
+@protocol
 def release_slide_holder():
-    # Implement robot movement logic here
-    log("Releasing slide holder")
-    return
+    "A function to release the slide holder"
+    ...
 
 
-@register
+@protocol
 def pick_up_slide_in_tray(slider: int):
-    # Implement robot movement logic here
-    log(f"Picking up slide {slider} in tray")
-    return
+    "A function to pick up a slide in the tray given its index"
+    ...
 
 
-@register
+@protocol
 def drop_slider_in_tray(slider: int):
-    # Implement robot movement logic here
-    log(f"Dropping slide {slider} in tray")
-    # Implement robot movement logic here
-    return
+    "A function to drop a slide in the tray given its index"
+    ...
 
 
-@register
+@protocol
 def move_robot_to_microscope():
-    # Implement robot movement logic here
-    log("Moving robot to microscope")
-    return
+    "A function to move the robot to the microscope"
+    ...
 
 
-@register
+@protocol
 def segment_cells(image: Image) -> Image:
-    # Implement cell segmentation logic here
-    log("Segmenting cells")
-    return from_array_like(
-        image.data > 0,
-        name="Segmentation of the image",
-        instance_mask_views=[
-            PartialInstanceMaskViewInput(
-                referenceView=create_reference_view(image),
-            )
-        ],
-    )
+    "A function to segment cells in an image"
+    ...
 
 
-@register
+@protocol
 def calculate_percentage_of_stained_cells(image: Image) -> float:
-    # Implement percentage calculation logic here
-    return np.random.rand()
+    "A function to calculate the percentage of stained cells in an image"
+    ...
 
 
-@register
+@protocol
 def move_robot_to_opentrons():
-    # Implement robot movement logic here
-    log("Moving robot to Opentrons")
-    return
+    "A function to move the robot to the OpenTrons robot"
+    ...
 
 
-@register
+@protocol
 def drop_slide():
-    # Implement robot movement logic here
-    log("Dropping slide")
-    return
+    "A function to drop a slide"
+    ...
 
 
-@register
+@protocol
 def pickup_slide():
-    # Implement robot movement logic here
-    log("Picking up slide")
-    return
+    "A function to pick up a slide"
+    ...
 
 
-@register
+@protocol
 def acquire_image() -> Image:
-    # Implement image acquisition logic here
-    log("Acquiring image")
-    return from_array_like(
-        np.random.randint(0, 256, (1, 100, 100), dtype=np.uint8), name="Acquired Image"
-    )
+    "A function to acquire an image from the microscope"
+    ...
 
 
-@register
+@protocol
 def run_washing_protocol():
-    # Implement staining protocol logic here
-    log("Running staining protocol")
-    return
+    "A function to run the washing protocol"
 
 
 @register(
