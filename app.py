@@ -13,6 +13,11 @@ from arkitekt_next import easy, protocol, log, register
 import numpy as np
 
 
+# Not that everything is a stub and needs to be implemented with real logic
+# by other apps or humans, we use standard python function and the ellipsis
+# (...) to indicate that the function is not implemented here.
+
+
 @protocol
 def move_robot_slide_holder():
     "A function to move the robot to the slide holder"
@@ -91,6 +96,8 @@ def run_washing_protocol():
     "A function to run the washing protocol"
 
 
+# depencies must be listed in this array to ensure they are available
+# when this function is called (will appear in the UI)
 @register(
     dependencies=[
         acquire_image,
