@@ -170,7 +170,7 @@ wheels = [
 
 [[package]]
 name = "arkitekt-next"
-version = "0.31.1"
+version = "0.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -179,6 +179,7 @@ dependencies = [
     { name = "kabinet" },
     { name = "koil" },
     { name = "platformdirs" },
+    { name = "py-machineid" },
     { name = "rath" },
     { name = "rekuest-next" },
     { name = "rich-click" },
@@ -186,9 +187,9 @@ dependencies = [
     { name = "turms" },
     { name = "watchfiles" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/58/c6cd15c7e957eb9bb4cf64ed18552fde48d63e9683dabd864a8b099b83f4/arkitekt_next-0.31.1.tar.gz", hash = "sha256:653ad3fd10c2f66dc26d1e8d941cc31b60ab4fd8431dce2db32fd7e4c03b8d7a", size = 567422 }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/c9/83b9305dbf16ed2aaff69e253b671635d99b07cce3263a3add5d68066062/arkitekt_next-0.35.0.tar.gz", hash = "sha256:dbc97fa0eeaa0d29d95de66d0239b5fc59d8fb763bec1f82225baf8c8dc2d135", size = 567664 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/90/cc/96ca7246ff4384e542de31ee812d482c05efb8e60bcf91cd9943bb683d93/arkitekt_next-0.31.1-py3-none-any.whl", hash = "sha256:7fc32a618d3f4c0fbe817c38115dcacd9cfab47d603269440808f39825653ea2", size = 604261 },
+    { url = "https://files.pythonhosted.org/packages/37/06/960b082a5a50577065051edc8f4e2ef4490b8be38a85badc8839ff58f4e2/arkitekt_next-0.35.0-py3-none-any.whl", hash = "sha256:063aa5d2cb63f9565b9a7190a1ebd4725d4666a5445cc48574ff4037101fb8af", size = 604571 },
 ]
 
 [package.optional-dependencies]
@@ -804,15 +805,15 @@ wheels = [
 
 [[package]]
 name = "koil"
-version = "2.0.6"
+version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "janus" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e3/42/a646ab46f6cbe9e080daca8b24ceff9c5f4f27deadd6db5831c2e0289335/koil-2.0.6.tar.gz", hash = "sha256:605dd83b364c78b7cab496c4a136c76435c68e609066f4d6631fa0a1aeabcd78", size = 15537 }
+sdist = { url = "https://files.pythonhosted.org/packages/05/64/f7e1c3ff0a0482560d94c3d2297753bd04a61d615584abb442aa62b67243/koil-2.1.0.tar.gz", hash = "sha256:46a64a3851b6f92581f5337e5c04e39a532d287470b2d03bb3ce497a26feaa83", size = 15755 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/a3/bd33aced3ad6f48cdcee762c50980f256c0e9620a7dc8b4ebf1334df4f8a/koil-2.0.6-py3-none-any.whl", hash = "sha256:2807e2cad863fb381f2e348f5968188f0ddd3ca47decfc4acbf74165c5029bae", size = 19092 },
+    { url = "https://files.pythonhosted.org/packages/63/63/b509df581f4d91c8d507604652dd504a005f526920abf08645563afe7f52/koil-2.1.0-py3-none-any.whl", hash = "sha256:1b442502f08d975ea42f17cbf8828ccc99087dd684a7c16263d80af34aa8f41e", size = 19321 },
 ]
 
 [[package]]
@@ -1222,10 +1223,22 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "arkitekt-next", extras = ["all", "kraph"], specifier = ">=0.30.0" },
+    { name = "arkitekt-next", extras = ["all", "kraph"], specifier = ">=0.35.0" },
     { name = "arkitekt-server", specifier = ">=1.5.0" },
     { name = "numpy", specifier = "<2" },
     { name = "pytest", specifier = ">=8.4.1" },
+]
+
+[[package]]
+name = "py-machineid"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "winregistry", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/b0/c7fa6de7298a8f4e544929b97fa028304c0e11a4bc9500eff8689821bdbb/py_machineid-1.0.0.tar.gz", hash = "sha256:8a902a00fae8c6d6433f463697c21dc4ce98c6e55a2e0535c0273319acb0047a", size = 4629 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/76/1ed8375cb1212824c57eb706e1f09f3f2ca4ed12b8d56b28a160e2d53505/py_machineid-1.0.0-py3-none-any.whl", hash = "sha256:910df0d5f2663bcf6739d835c4949f4e9cc6bb090a58b3dd766e12e5f768e3b9", size = 4926 },
 ]
 
 [[package]]
@@ -1403,16 +1416,16 @@ wheels = [
 
 [[package]]
 name = "rath"
-version = "3.7.0"
+version = "3.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "graphql-core" },
     { name = "koil" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/55/2875a493007a9c54afd6173fc69b0aa6d1d520e727d1ede0b9f02c72aab9/rath-3.7.0.tar.gz", hash = "sha256:5c901bb6e84b28936f0bd9763799c26c7ada8e221b711e0b5f5376b8eae501ad", size = 33569 }
+sdist = { url = "https://files.pythonhosted.org/packages/86/9e/92999dcaaeef969c9beb864c901630763b605df4bff6ba91a6cad51d13a2/rath-3.8.0.tar.gz", hash = "sha256:a0662c56d446946e50b2c12b2c44854ef82c060c6aa0198e962c29481edadacf", size = 34144 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/6a/535b5f0c340416cc26e66c591437c864e0dd30ca35bebb5e9f551da9038e/rath-3.7.0-py3-none-any.whl", hash = "sha256:56697f9bdb02928030419c43c0ebd0e5fcc3184f9def2d840d2ae6282b5cf5d6", size = 50137 },
+    { url = "https://files.pythonhosted.org/packages/2f/93/bf5eb0c9973a40a525ed35753cc79b806eb82e269c5d60d3e248bd7da165/rath-3.8.0-py3-none-any.whl", hash = "sha256:c6c609c69bbf1d1e69baa15b74680583a637eb168edfe66a9138aea221ce7ad6", size = 50737 },
 ]
 
 [[package]]
@@ -1440,7 +1453,7 @@ wheels = [
 
 [[package]]
 name = "rekuest-next"
-version = "0.21.0"
+version = "0.24.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
@@ -1453,9 +1466,9 @@ dependencies = [
     { name = "rath" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/1f/824743b520b176237cd9e00d38b56cf9fd72676643d28839fcd86a57d078/rekuest_next-0.21.0.tar.gz", hash = "sha256:4987db086684786b50ade2d4569c8dd5463a12a8926083f81090967aec231ece", size = 112570 }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/fe/8ca3d795d42b45fad763f99516f335ee0805211c894b7cbdb733a7396def/rekuest_next-0.24.2.tar.gz", hash = "sha256:afa06b23b876be36c09878912a99edd8a6db483a9869fae3f3ec341265d37d47", size = 112138 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/5d/31326a469e7fdf330abf2c1f237896bcf78baf0a4828023babfd576f88b1/rekuest_next-0.21.0-py3-none-any.whl", hash = "sha256:564a362411a38267a29a848edc8a0f39c68393d780613a7f0ff54f858ea460fd", size = 150557 },
+    { url = "https://files.pythonhosted.org/packages/44/8f/a2087faa0c2506aeddaa67e1d7d71f9cda0f2a9f064c8b9bde1def7f2f9a/rekuest_next-0.24.2-py3-none-any.whl", hash = "sha256:a349c21c90723622ebe88af24672710a723696176f5e1a9fedb3ad32f05d0962", size = 150746 },
 ]
 
 [[package]]
@@ -1775,6 +1788,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/86/eb/20b6cdf273913d0ad05a6a14aed4b9a85591c18a987a3d47f20fa13dcc47/websockets-15.0.1-cp313-cp313-win32.whl", hash = "sha256:ba9e56e8ceeeedb2e080147ba85ffcd5cd0711b89576b83784d8605a7df455fa", size = 176393 },
     { url = "https://files.pythonhosted.org/packages/1b/6c/c65773d6cab416a64d191d6ee8a8b1c68a09970ea6909d16965d26bfed1e/websockets-15.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:e09473f095a819042ecb2ab9465aee615bd9c2028e4ef7d933600a8401c79561", size = 176837 },
     { url = "https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl", hash = "sha256:f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f", size = 169743 },
+]
+
+[[package]]
+name = "winregistry"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/86/94/ddc339d2562267af7d25d5067874f7df8c6c19ab9dd976fa830982b1c398/winregistry-2.1.2.tar.gz", hash = "sha256:50260e1aaba4116f707f86a4e287ffcb1eeae7dc0a0883c6d1776017e693fc69", size = 9538 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/52/dd/5a18d9fbf9a3d69b40e395d80779dfaeda77b98c946df36bf7df41ddcaa5/winregistry-2.1.2-py3-none-any.whl", hash = "sha256:e142548f56fc1fc6b83ddf88baca2e9e18cd6a266d9e00f111e54977dee768cf", size = 8507 },
 ]
 
 [[package]]
