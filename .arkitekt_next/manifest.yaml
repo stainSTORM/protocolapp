@@ -1,6 +1,6 @@
 author: jhnnsrs
 entrypoint: app
-identifier: karlos
+identifier: protocolapp
 scopes:
 - read
-version: 0.0.1
+version: 0.2.0

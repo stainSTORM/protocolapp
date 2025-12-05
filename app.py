@@ -1,3 +1,5 @@
+import os
+from typing import Generator
 from kraph.api.schema import (
     EntityRoleDefinitionInput,
     MetricKind,
@@ -9,9 +11,9 @@ from kraph.api.schema import (
     create_structure_metric,
 )
 from mikro_next.api.schema import Image
-from arkitekt_next import easy, protocol, log, register
+from arkitekt_next import easy, protocol, log, register, find
 import numpy as np
-
+from dotenv import load_dotenv
 
 # Not that everything is a stub and needs to be implemented with real logic
 # by other apps or humans, we use standard python function and the ellipsis
@@ -24,295 +26,243 @@ import numpy as np
 # e.g. @protocol(collections=["segmentation"])
 
 
+## ARKIRINO
 @protocol
-def move_robot_slide_holder():
-    "A function to move the robot to the slide holder"
+def pickup_slide_from_pickupstation(speed=100, acceleration=100):
+    "A function to pickup a slide from the pickup station"
+    ...
 
+@protocol
+def move_slide_to_opentron(speed=100, acceleration=100):
+    "A function to move a slide to the opentron"
+    ...
+
+@protocol
+def pickup_slide_from_opentron(speed=100, acceleration=100):
+    "A function to pickup a slide from the opentron"
+    ...
+
+@protocol
+def move_slide_to_microscope(speed=100, acceleration=100):
+    "A function to move a slide to the microscope"
+    ...
+
+@protocol
+def pickup_slide_from_microscope(speed=100, acceleration=100):
+    "A function to pickup a slide from the microscope"
+    ...
+
+@protocol
+def move_slide_to_pickupstation(speed=100, acceleration=100):
+    "A function to move a slide to the pickup station"
+    ...
+
+@protocol
+def shutdown_robot_arm():
+    "A function to shutdown the robot arm"
+    ...
+
+## ImSwitch (Microscope)
+@protocol
+def runTileScan(
+    center_x_micrometer: float | None = None,
+    center_y_micrometer: float | None = None,
+    range_x_micrometer: float = 5000,
+    range_y_micrometer: float = 5000,
+    step_x_micrometer: float | None = None,
+    step_y_micrometer: float | None = None,
+    overlap_percent: float = 10.0,
+    illumination_channel: str | None = "LED",
+    illumination_intensity: float = 1024,
+    exposure_time: float | None = None,
+    gain: float | None = None,
+    speed: float = 10000,
+    positionerName: str | None = None,
+    performAutofocus: bool = False,
+    autofocus_range: float = 100,
+    autofocus_resolution: float = 10,
+    autofocus_illumination_channel: str | None = None,
+    objective_id: int | None = None,
+    t_settle: float = 0.2,
+) -> Generator[Image, None, None]:
+    """Run a tile scan with enhanced control over imaging parameters.
+
+    Runs a tile scan by moving the specified positioner in a grid pattern centered
+    at the given coordinates, capturing images at each position with specified
+    illumination and camera settings, and yielding the images with appropriate
+    affine transformations for stitching.
+
+    The step size is automatically calculated based on the current objective's
+    field of view and the specified overlap percentage, unless explicitly provided.
+
+    Args:
+        center_x_micrometer (float | None): Center position in the X direction (micrometers).
+            If None, uses current X position.
+        center_y_micrometer (float | None): Center position in the Y direction (micrometers).
+            If None, uses current Y position.
+        range_x_micrometer (float): Total range to scan in the X direction (micrometers).
+        range_y_micrometer (float): Total range to scan in the Y direction (micrometers).
+        step_x_micrometer (float | None): Step size in the X direction (micrometers).
+            If None, automatically calculated based on objective FOV and overlap.
+        step_y_micrometer (float | None): Step size in the Y direction (micrometers).
+            If None, automatically calculated based on objective FOV and overlap.
+        overlap_percent (float): Percentage of overlap between adjacent tiles (0-100).
+            Only used if step_x/y_micrometer are None. Default is 10%.
+        illumination_channel (str | None): Name of the illumination source to use.
+            If None, uses current illumination settings.
+        illumination_intensity (float): Intensity value for the illumination source (0-100).
+        exposure_time (float | None): Exposure time in milliseconds. If None, uses current setting.
+        gain (float | None): Camera gain value. If None, uses current setting.
+        speed (float): Speed of the positioner movement (units per second).
+        positionerName (str | None): Name of the positioner to use. If None,
+            the first available positioner will be used.
+        performAutofocus (bool): Whether to perform autofocus at each tile position.
+        autofocus_range (float): Range for autofocus scan in Z direction (micrometers).
+        autofocus_resolution (float): Step size for autofocus scan (micrometers).
+        autofocus_illumination_channel (str | None): Illumination channel to use for autofocus.
+            If None, uses the same as illumination_channel.
+        objective_id (int | None): ID of the objective to use (0 or 1).
+            If specified, the objective will be moved to this position before scanning
+            and magnification will be retrieved from ObjectiveManager. If None, uses current objective.
+        t_settle (float): Time to wait after moving for the system to settle, in seconds.
+
+    Yields:
+        Image: Captured image with affine transformation for stitching.
+    """
     ...
 
 
+## StarMist
 @protocol
-def grip_slide_holder():
-    "A function to grip the slide holder"
+def predict_stardist_he(image: Image) -> Image:
+    """Segment HE
+
+    Segments Cells using the stardist he pretrained model
+
+    Args:
+        image (Image): The Input Image (needs to have at least 3 channels).
+    Returns:
+        Image: An Image with the Segmented Cells.
+
+    """
     ...
 
 
-@protocol
-def release_slide_holder():
-    "A function to release the slide holder"
-    ...
-
-
-@protocol
-def pick_up_slide_in_tray(slider: int):
-    "A function to pick up a slide in the tray given its index"
-    ...
-
-
-@protocol
-def drop_slider_in_tray(slider: int):
-    "A function to drop a slide in the tray given its index"
-    ...
-
-
-@protocol
-def move_robot_to_microscope():
-    "A function to move the robot to the microscope"
-    ...
-
-
-@protocol
-def segment_cells(image: Image) -> Image:
-    "A function to segment cells in an image"
-    ...
-
-
-@protocol
-def calculate_percentage_of_stained_cells(image: Image) -> float:
-    "A function to calculate the percentage of stained cells in an image"
-    ...
-
-
-@protocol
-def move_robot_to_opentrons():
-    "A function to move the robot to the OpenTrons robot"
-    ...
-
-
-@protocol
-def drop_slide():
-    "A function to drop a slide"
-    ...
-
-
-@protocol
-def pickup_slide():
-    "A function to pick up a slide"
-    ...
-
-
-@protocol
-def acquire_image() -> Image:
-    "A function to acquire an image from the microscope"
-    ...
-
-
+## OT2 (OpenTrons)
 @protocol
 def run_washing_protocol():
-    "A function to run the washing protocol"
+    "A function to run the washing protocol on the OpenTrons"
+    ...
 
+# For now we just run one cycle with washing a pre-stained slide and check the washing efficiency
+# @register
+# def run_staining_protocol():
+#     "A function to run the IHC staining protocol"
+#     ...
+
+## Image analysis (one app)
+@protocol
+def residual_stain_quantity(image: Image) -> float:
+    "A function to estime the residual stain quantity in the second channel of a 2 channel IHC image"
+    ...
+
+@protocol
+def count_segmented_cells(image: Image) -> int:
+    "A function to count the number of segmented cells in a segmentation mask"
+    ...
+
+@protocol
+def rgb_to_ihc_image(image: Image) -> Image:
+    "A function to deconvolve stains on a RGB image to a 2 channel IHC image. H+AEC stain assumed."
+    ...
 
 # depencies must be listed in this array to ensure they are available
 # when this function is called (will appear in the UI)
 @register(
     dependencies=[
-        acquire_image,
-        segment_cells,
-        calculate_percentage_of_stained_cells,
-        move_robot_to_opentrons,
-        drop_slide,
-        pickup_slide,
-        move_robot_to_microscope,
-        grip_slide_holder,
-        move_robot_slide_holder,
-        release_slide_holder,
-        pick_up_slide_in_tray,
-        drop_slider_in_tray,
-        run_washing_protocol,
+        pickup_slide_from_pickupstation,
+        move_slide_to_opentron,
+        pickup_slide_from_opentron,
+        move_slide_to_microscope,
+        pickup_slide_from_microscope,
+        move_slide_to_pickupstation,
+        shutdown_robot_arm,
+        runTileScan,
+        predict_stardist_he,
+        residual_stain_quantity,
+        count_segmented_cells,
+        rgb_to_ihc_image,
+        run_washing_protocol
     ]
 )
-def smart_logic_loop(max_iterations=5):
-    num_sliders = 1
+def smart_logic_loop(max_iterations=2):
+    num_sliders = 1 # FOR NOW ONLY ONE SLIDER IS SUPPORTED
 
     for slider in range(num_sliders):
-        move_robot_slide_holder()
-        pick_up_slide_in_tray(slider)  # Use the current slider index
-        grip_slide_holder()
-
-        move_robot_to_microscope()
-        release_slide_holder()
+        assert slider == 0, "FOR NOW ONLY ONE SLIDER IS SUPPORTED"
+        pickup_slide_from_pickupstation()
+        move_slide_to_microscope()
 
         # Run initial acquisition and segmentation
-        image = acquire_image()
-        iteration = 0
-        segmented_image = segment_cells(image)
-        current_stain_percentage = calculate_percentage_of_stained_cells(
-            segmented_image
-        )
 
-        while current_stain_percentage > 0.8 and iteration < max_iterations:
-            pickup_slide()
-            move_robot_to_opentrons()
-            drop_slide()
+        stain_levels = []
+        for tile in runTileScan(exposure_time=100, illumination_intensity=100, gain=2):
+            segmented_image = predict_stardist_he(tile)
+            num_cells = count_segmented_cells(segmented_image)
+            if num_cells < 10:
+                continue
+            ihc_image = rgb_to_ihc_image(tile)  
+            stain_level = residual_stain_quantity(ihc_image)
+            stain_levels.append(stain_level)
+        pre_wash_avg_stain_level = np.mean(stain_levels)
+        log(f"TileScan stain Levels: {stain_levels}, Pre-wash avg stain level: {pre_wash_avg_stain_level}")
+
+        iteration = 0
+        current_avg_stain_level = pre_wash_avg_stain_level
+        while current_avg_stain_level > 150 and iteration < max_iterations:
+            pickup_slide_from_microscope()
+            move_slide_to_opentron()
 
             run_washing_protocol()
 
-            pickup_slide()
-            move_robot_to_microscope()
-            drop_slide()
+            pickup_slide_from_opentron()
+            move_slide_to_microscope()
 
-            image = acquire_image()
-            segmented_image = segment_cells(image)
-            current_stain_percentage = calculate_percentage_of_stained_cells(
-                segmented_image
-            )
-
-            iteration += 1
+            stain_levels = []
+            for tile in runTileScan(exposure_time=100, illumination_intensity=100, gain=2):
+                segmented_image = predict_stardist_he(tile)
+                num_cells = count_segmented_cells(segmented_image)
+                if num_cells < 10:
+                    continue
+                ihc_image = rgb_to_ihc_image(tile)  
+                stain_level = residual_stain_quantity(ihc_image)
+                stain_levels.append(stain_level)
+            current_avg_stain_level = np.mean(stain_levels)
             log(
-                f"Iteration {iteration}, Stain Percentage: {current_stain_percentage:.2%}"
+                f"TileScan stain Levels: {stain_levels}, Iteration {iteration} after wash avg stain level: {current_avg_stain_level}"
             )
-
+            iteration += 1
         if iteration == max_iterations:
             log("Reached maximum iterations without sufficient staining.")
+        else:
+            log(f"Iteration {iteration} after wash avg stain level: {current_avg_stain_level} was sufficient.\n Washing successful.")
 
-        pickup_slide()
-        move_robot_slide_holder()
-        drop_slider_in_tray(slider)
-
-    return
-
-
-@register(
-    dependencies=[
-        acquire_image,
-        segment_cells,
-        calculate_percentage_of_stained_cells,
-        move_robot_to_opentrons,
-        drop_slide,
-        pickup_slide,
-        move_robot_to_microscope,
-        grip_slide_holder,
-        move_robot_slide_holder,
-        release_slide_holder,
-        pick_up_slide_in_tray,
-        drop_slider_in_tray,
-        run_washing_protocol,
-    ]
-)
-def graphed_smart_logic_loop(graph_name="StainStorm Graph", max_iterations=5):
-    num_sliders = 5
-
-    graph = create_graph(name=graph_name, description="Graph for StainStorm protocol")
-
-    # Define categories and protocols
-    # Our subject is a biological sample on a slide
-    Sample = create_entity_category(
-        label="Sample", description="A biological sample on a slide", graph=graph
-    )
-
-    # Measurement Categories describe what kind of measurements we are taking
-    # to monitor the staining process
-    ACQUISITION_FOR = create_measurement_category(
-        label="Acquisition of",
-        description="The image is a microscopic acquisition of a sample",
-        graph=graph,
-        structure_definition=Image,
-        entity_definition=Sample,
-    )
-
-    LABELMASK_FOR = create_measurement_category(
-        label="Labelmask for",
-        description="The image is a segmentation mask labeling stained cells in a sample as well as unstained cells",
-        graph=graph,
-        structure_definition=Image,
-        entity_definition=Sample,
-    )
-
-    # Protocol Event Categories describe the events in our protocol
-    # Each washing step is an event with a duration and associated slide
-    WASHING_STEP = create_protocol_event_category(
-        graph=graph,
-        label="OpenTrons Washing Step",
-        description="Event representing a washing step performed by the OpenTrons robot",
-        variable_definitions=[
-            VariableDefinitionInput(
-                param="duration",
-                valueKind=MetricKind.FLOAT,
-                description="Duration of the washing step in minutes",
-            )
-        ],
-        source_entity_roles=[
-            EntityRoleDefinitionInput(
-                role="slide",
-                description="The slide being processed",
-                label="Slide",
-                categoryDefinition=Sample,
-            )
-        ],
-    )
-
-    # Create samples for each slide
-    loaded_samples = [Sample(name=f"Sample {i + 1}") for i in range(num_sliders)]
-
-    for slider, sample in enumerate(loaded_samples):
-        move_robot_slide_holder()
-        pick_up_slide_in_tray(slider)  # Use the current slider index
-        grip_slide_holder()
-
-        move_robot_to_microscope()
-        release_slide_holder()
-
-        # Run initial acquisition and segmentation
-        image = acquire_image()
-        image | ACQUISITION_FOR() | sample
-
-        iteration = 0
-        segmented_image = segment_cells(image)
-
-        current_stain_percentage = calculate_percentage_of_stained_cells(
-            segmented_image
-        )
-
-        segmented_image | LABELMASK_FOR() | sample
-
-        create_structure_metric(
-            structure=segmented_image,
-            label="stain_percentage",
-            value=current_stain_percentage,
-            graph=graph,
-            metric_kind=MetricKind.FLOAT,
-        )
-
-        while current_stain_percentage > 0.2 and iteration < max_iterations:
-            pickup_slide()
-            move_robot_to_opentrons()
-            drop_slide()
-
-            run_washing_protocol()
-            washing_event = WASHING_STEP(slide=sample, duration=15.0)
-
-            pickup_slide()
-            move_robot_to_microscope()
-            drop_slide()
-
-            image = acquire_image()
-            image | ACQUISITION_FOR() | sample
-            segmented_image = segment_cells(image)
-            segmented_image | LABELMASK_FOR() | sample
-            current_stain_percentage = calculate_percentage_of_stained_cells(
-                segmented_image
-            )
-
-            create_structure_metric(
-                structure=segmented_image,
-                label="stain_percentage",
-                value=current_stain_percentage,
-                graph=graph,
-                metric_kind=MetricKind.FLOAT,
-            )
-
-            iteration += 1
-            log(
-                f"Iteration {iteration}, Stain Percentage: {current_stain_percentage:.2%}"
-            )
-
-        pickup_slide()
-        move_robot_slide_holder()
-        drop_slider_in_tray(slider)
-
+        pickup_slide_from_microscope()
+        move_slide_to_pickupstation()
+    log("All sliders processed. Finished stainSTORMING smart workflow! \n Shutting down necessarydevices.")
+    shutdown_robot_arm()
     return
 
 
 if __name__ == "__main__":
-    with easy() as e:
-        e.rekuest.run()
+    load_dotenv()
+    app_name = os.getenv("ARKITEKT_APPNAME", "")
+    if app_name == "":
+        print(
+            "ARKITEKT_APPNAME is not set. Please set the ARKITEKT_APPNAME environment variable. For example put it in .env file."
+        )
+        exit(1)
+    app_url = os.getenv("ARKITEKT_URL", "go.arkitekt.live")
+    app = easy(identifier=app_name, url=app_url, redeem_token=os.getenv("REDEEM_TOKEN"))
+    app.enter()
+    app.run()
