@@ -25,6 +25,8 @@ from dotenv import load_dotenv
 # the function should use to find implementations
 # e.g. @protocol(collections=["segmentation"])
 
+PERCENTAGE_OF_STAINED_CELLS_THRESHOLD = 10 # 10% of stained cells
+STAIN_THRESHOLD = 500 # eyeballed threshold from one image
 
 ## ARKIRINO
 @protocol
@@ -162,7 +164,7 @@ def run_washing_protocol():
 
 ## Image analysis (one app)
 @protocol
-def residual_stain_quantity(image: Image) -> float:
+def residual_stain_quantity(image: Image, stain_threshold: int = 500) -> float:
     "A function to estime the residual stain quantity in the second channel of a 2 channel IHC image"
     ...
 
@@ -219,7 +221,10 @@ def smart_logic_loop(max_iterations=2):
 
         iteration = 0
         current_avg_stain_level = pre_wash_avg_stain_level
-        while current_avg_stain_level > 150 and iteration < max_iterations:
+        while (
+            current_avg_stain_level > PERCENTAGE_OF_STAINED_CELLS_THRESHOLD
+            and iteration < max_iterations
+        ):
             pickup_slide_from_microscope()
             move_slide_to_opentron()
 
@@ -235,7 +240,7 @@ def smart_logic_loop(max_iterations=2):
                 if num_cells < 10:
                     continue
                 ihc_image = rgb_to_ihc_image(tile)  
-                stain_level = residual_stain_quantity(ihc_image)
+                stain_level = residual_stain_quantity(ihc_image, stain_threshold=STAIN_THRESHOLD)
                 stain_levels.append(stain_level)
             current_avg_stain_level = np.mean(stain_levels)
             log(
