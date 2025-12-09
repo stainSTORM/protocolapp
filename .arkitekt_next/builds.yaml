@@ -1,0 +1,329 @@
+builds:
+- build_id: ab98c62b-06e0-4084-9126-15737341bf6c
+  build_run: 4e9855e3-229c-45b6-8314-acbbcb2683e6
+  description: This is a vanilla flavour
+  flavour: vanilla
+  inspection:
+    implementations:
+    - definition:
+        args:
+        - default: 2
+          effects: []
+          key: max_iterations
+          kind: INT
+          nullable: true
+          validators: []
+        collections: []
+        description: No Description
+        interfaces: []
+        isDev: true
+        isTestFor: []
+        kind: FUNCTION
+        name: Smart Logic Loop
+        portGroups: []
+        returns: []
+        stateful: false
+      dependencies:
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          key: speed
+          kind: INT
+          nullable: true
+        - at: 1
+          key: acceleration
+          kind: INT
+          nullable: true
+        description: A function to pickup a slide from the pickup station
+        key: pickup_slide_from_pickupstation
+        optional: false
+        returnMatches: []
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          key: speed
+          kind: INT
+          nullable: true
+        - at: 1
+          key: acceleration
+          kind: INT
+          nullable: true
+        description: A function to move a slide to the opentron
+        key: move_slide_to_opentron
+        optional: false
+        returnMatches: []
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          key: speed
+          kind: INT
+          nullable: true
+        - at: 1
+          key: acceleration
+          kind: INT
+          nullable: true
+        description: A function to pickup a slide from the opentron
+        key: pickup_slide_from_opentron
+        optional: false
+        returnMatches: []
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          key: speed
+          kind: INT
+          nullable: true
+        - at: 1
+          key: acceleration
+          kind: INT
+          nullable: true
+        description: A function to move a slide to the microscope
+        key: move_slide_to_microscope
+        optional: false
+        returnMatches: []
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          key: speed
+          kind: INT
+          nullable: true
+        - at: 1
+          key: acceleration
+          kind: INT
+          nullable: true
+        description: A function to pickup a slide from the microscope
+        key: pickup_slide_from_microscope
+        optional: false
+        returnMatches: []
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          key: speed
+          kind: INT
+          nullable: true
+        - at: 1
+          key: acceleration
+          kind: INT
+          nullable: true
+        description: A function to move a slide to the pickup station
+        key: move_slide_to_pickupstation
+        optional: false
+        returnMatches: []
+      - allowInactive: true
+        argMatches: []
+        description: A function to shutdown the robot arm
+        key: shutdown_robot_arm
+        optional: false
+        returnMatches: []
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          key: center_x_micrometer
+          kind: FLOAT
+          nullable: true
+        - at: 1
+          key: center_y_micrometer
+          kind: FLOAT
+          nullable: true
+        - at: 2
+          key: range_x_micrometer
+          kind: INT
+          nullable: true
+        - at: 3
+          key: range_y_micrometer
+          kind: INT
+          nullable: true
+        - at: 4
+          key: step_x_micrometer
+          kind: FLOAT
+          nullable: true
+        - at: 5
+          key: step_y_micrometer
+          kind: FLOAT
+          nullable: true
+        - at: 6
+          key: overlap_percent
+          kind: FLOAT
+          nullable: true
+        - at: 7
+          key: illumination_channel
+          kind: STRING
+          nullable: true
+        - at: 8
+          key: illumination_intensity
+          kind: INT
+          nullable: true
+        - at: 9
+          key: exposure_time
+          kind: FLOAT
+          nullable: true
+        - at: 10
+          key: gain
+          kind: FLOAT
+          nullable: true
+        - at: 11
+          key: speed
+          kind: INT
+          nullable: true
+        - at: 12
+          key: positionerName
+          kind: STRING
+          nullable: true
+        - at: 13
+          key: performAutofocus
+          kind: BOOL
+          nullable: true
+        - at: 14
+          key: autofocus_range
+          kind: INT
+          nullable: true
+        - at: 15
+          key: autofocus_resolution
+          kind: INT
+          nullable: true
+        - at: 16
+          key: autofocus_illumination_channel
+          kind: STRING
+          nullable: true
+        - at: 17
+          key: objective_id
+          kind: INT
+          nullable: true
+        - at: 18
+          key: t_settle
+          kind: FLOAT
+          nullable: true
+        description: 'Runs a tile scan by moving the specified positioner in a grid
+          pattern centered
+
+          at the given coordinates, capturing images at each position with specified
+
+          illumination and camera settings, and yielding the images with appropriate
+
+          affine transformations for stitching.
+
+
+          The step size is automatically calculated based on the current objective''s
+
+          field of view and the specified overlap percentage, unless explicitly provided.'
+        key: run_tile_scan
+        optional: false
+        returnMatches:
+        - at: 0
+          identifier: '@mikro/image'
+          key: return0
+          kind: STRUCTURE
+          nullable: false
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          identifier: '@mikro/image'
+          key: image
+          kind: STRUCTURE
+          nullable: false
+        description: Segments Cells using the stardist he pretrained model
+        key: predict_stardist_he
+        optional: false
+        returnMatches:
+        - at: 0
+          identifier: '@mikro/image'
+          key: return0
+          kind: STRUCTURE
+          nullable: false
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          identifier: '@mikro/image'
+          key: image
+          kind: STRUCTURE
+          nullable: false
+        - at: 1
+          key: stain_threshold
+          kind: INT
+          nullable: true
+        description: A function to estime the residual stain quantity in the second
+          channel of a 2 channel IHC image
+        key: residual_stain_quantity
+        optional: false
+        returnMatches:
+        - at: 0
+          key: return0
+          kind: FLOAT
+          nullable: false
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          identifier: '@mikro/image'
+          key: image
+          kind: STRUCTURE
+          nullable: false
+        description: A function to count the number of segmented cells in a segmentation
+          mask
+        key: count_segmented_cells
+        optional: false
+        returnMatches:
+        - at: 0
+          key: return0
+          kind: INT
+          nullable: false
+      - allowInactive: true
+        argMatches:
+        - at: 0
+          identifier: '@mikro/image'
+          key: image
+          kind: STRUCTURE
+          nullable: false
+        description: A function to deconvolve stains on a RGB image to a 2 channel
+          IHC image. H+AEC stain assumed.
+        key: rgb_to_ihc_image
+        optional: false
+        returnMatches:
+        - at: 0
+          identifier: '@mikro/image'
+          key: return0
+          kind: STRUCTURE
+          nullable: false
+      - allowInactive: true
+        argMatches: []
+        description: A function to run the washing protocol on the OpenTrons
+        key: run_washing_protocol
+        optional: false
+        returnMatches: []
+      dynamic: false
+      interface: smart_logic_loop
+    requirements:
+    - description: An instance of ArkitektNext Datalayer to make requests to the user's
+        data
+      key: datalayer
+      optional: true
+      service: live.arkitekt.s3
+    - description: An instance of ArkitektNext kabinet to relate entities
+      key: kabinet
+      optional: false
+      service: live.arkitekt.kabinet
+    - description: An instance of ArkitektNext kraph to relate entities
+      key: kraph
+      optional: false
+      service: live.arkitekt.kraph
+    - description: An instance of ArkitektNext Lok to authenticate the user
+      key: lok
+      optional: false
+      service: live.arkitekt.lok
+    - description: An instance of ArkitektNext Mikro to make requests to the user's
+        data
+      key: mikro
+      optional: true
+      service: live.arkitekt.mikro
+    - description: An instance of ArkitektNext Rekuest to assign to actions
+      key: rekuest
+      optional: false
+      service: live.arkitekt.rekuest
+    size: 515887404
+  manifest:
+    author: jhnnsrs
+    entrypoint: app
+    identifier: protocolapp
+    scopes:
+    - read
+    version: 0.2.0
+  selectors: []
+latest_build_run: 4e9855e3-229c-45b6-8314-acbbcb2683e6
