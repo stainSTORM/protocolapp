@@ -27,6 +27,8 @@ from dotenv import load_dotenv
 
 PERCENTAGE_OF_STAINED_CELLS_THRESHOLD = 10 # 10% of stained cells
 STAIN_THRESHOLD = 500 # eyeballed threshold from one image
+MICROSCOPE_PICKUP_POSITION_X = 25000
+MICROSCOPE_PICKUP_POSITION_Y = -21000
 
 ## ARKIRINO
 @protocol
@@ -65,6 +67,47 @@ def shutdown_robot_arm():
     ...
 
 ## ImSwitch (Microscope)
+@protocol
+def goToPosition(
+    x_micrometer: float,
+    y_micrometer: float,
+    positionerName: str | None = None,
+    speed: float = 10000,
+    is_blocking: bool = True,
+    t_settle: float = 0.2,
+) -> int:
+    """Move the stage to the specified X,Y position.
+
+    Moves the specified positioner (or the first available one) to the given
+    X and Y coordinates in micrometers.
+
+    Args:
+        x_micrometer (float): Target X position in micrometers.
+        y_micrometer (float): Target Y position in micrometers.
+        positionerName (str | None): Name of the positioner to use. If None,
+            the first available positioner will be used.
+        speed (float): Speed of the positioner movement (units per second).
+            Default is 10000.
+        is_blocking (bool): Whether to wait for movement completion before returning.
+            Default is True.
+        t_settle (float): Settling time in seconds to wait after movement completes.
+            Only used if is_blocking is True. Default is 0.2 seconds.
+
+    Example:
+        >>> # Move to position (5000, 3000) micrometers
+        >>> goToPosition(x_micrometer=5000, y_micrometer=3000)
+
+        >>> # Move with custom speed and non-blocking
+        >>> goToPosition(
+        ...     x_micrometer=5000,
+        ...     y_micrometer=3000,
+        ...     speed=5000,
+        ...     is_blocking=False
+        ... )
+    """
+    ...
+
+
 @protocol
 def runTileScan(
     center_x_micrometer: float | None = None,
@@ -189,6 +232,7 @@ def rgb_to_ihc_image(image: Image) -> Image:
         pickup_slide_from_microscope,
         move_slide_to_pickupstation,
         shutdown_robot_arm,
+        goToPosition,
         runTileScan,
         predict_stardist_he,
         residual_stain_quantity,
@@ -203,6 +247,10 @@ def smart_logic_loop(max_iterations=2):
     for slider in range(num_sliders):
         assert slider == 0, "FOR NOW ONLY ONE SLIDER IS SUPPORTED"
         pickup_slide_from_pickupstation()
+        goToPosition(
+            x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
+            y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+        )
         move_slide_to_microscope()
 
         # Run initial acquisition and segmentation
@@ -225,12 +273,20 @@ def smart_logic_loop(max_iterations=2):
             current_avg_stain_level > PERCENTAGE_OF_STAINED_CELLS_THRESHOLD
             and iteration < max_iterations
         ):
+            goToPosition(
+                x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
+                y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+            )
             pickup_slide_from_microscope()
             move_slide_to_opentron()
 
             run_washing_protocol()
 
             pickup_slide_from_opentron()
+            goToPosition(
+                x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
+                y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+            )
             move_slide_to_microscope()
 
             stain_levels = []
@@ -252,6 +308,10 @@ def smart_logic_loop(max_iterations=2):
         else:
             log(f"Iteration {iteration} after wash avg stain level: {current_avg_stain_level} was sufficient.\n Washing successful.")
 
+        goToPosition(
+            x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
+            y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+        )
         pickup_slide_from_microscope()
         move_slide_to_pickupstation()
     log("All sliders processed. Finished stainSTORMING smart workflow! \n Shutting down necessarydevices.")
