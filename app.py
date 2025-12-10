@@ -25,39 +25,35 @@ from dotenv import load_dotenv
 # the function should use to find implementations
 # e.g. @protocol(collections=["segmentation"])
 
-PERCENTAGE_OF_STAINED_CELLS_THRESHOLD = 10 # 10% of stained cells
-STAIN_THRESHOLD = 500 # eyeballed threshold from one image
-MICROSCOPE_PICKUP_POSITION_X = 25000
-MICROSCOPE_PICKUP_POSITION_Y = -21000
 
 ## ARKIRINO
 @protocol
-def pickup_slide_from_pickupstation(speed=100, acceleration=100):
+def pickup_slide_from_pickupstation():
     "A function to pickup a slide from the pickup station"
     ...
 
 @protocol
-def move_slide_to_opentron(speed=100, acceleration=100):
+def move_slide_to_opentron():
     "A function to move a slide to the opentron"
     ...
 
 @protocol
-def pickup_slide_from_opentron(speed=100, acceleration=100):
+def pickup_slide_from_opentron():
     "A function to pickup a slide from the opentron"
     ...
 
 @protocol
-def move_slide_to_microscope(speed=100, acceleration=100):
+def move_slide_to_microscope():
     "A function to move a slide to the microscope"
     ...
 
 @protocol
-def pickup_slide_from_microscope(speed=100, acceleration=100):
+def pickup_slide_from_microscope():
     "A function to pickup a slide from the microscope"
     ...
 
 @protocol
-def move_slide_to_pickupstation(speed=100, acceleration=100):
+def move_slide_to_pickupstation():
     "A function to move a slide to the pickup station"
     ...
 
@@ -221,6 +217,7 @@ def rgb_to_ihc_image(image: Image) -> Image:
     "A function to deconvolve stains on a RGB image to a 2 channel IHC image. H+AEC stain assumed."
     ...
 
+
 # depencies must be listed in this array to ensure they are available
 # when this function is called (will appear in the UI)
 @register(
@@ -241,22 +238,36 @@ def rgb_to_ihc_image(image: Image) -> Image:
         run_washing_protocol
     ]
 )
-def smart_logic_loop(max_iterations=2):
+def smart_logic_loop(
+    max_iterations=2,
+    percentage_of_stained_cells_threshold=10,  # 10% of stained cells
+    stain_threshold=500,  # eyeballed threshold from one image
+    microscope_pickup_position_x=25000,
+    microscope_pickup_position_y=-21000,
+    tile_scan_start_x=35000,
+    tile_scan_start_y=-42000,
+):
     num_sliders = 1 # FOR NOW ONLY ONE SLIDER IS SUPPORTED
 
     for slider in range(num_sliders):
         assert slider == 0, "FOR NOW ONLY ONE SLIDER IS SUPPORTED"
         pickup_slide_from_pickupstation()
         goToPosition(
-            x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
-            y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+            x_micrometer=microscope_pickup_position_x,
+            y_micrometer=microscope_pickup_position_y,
         )
         move_slide_to_microscope()
 
         # Run initial acquisition and segmentation
 
         stain_levels = []
-        for tile in runTileScan(exposure_time=100, illumination_intensity=100, gain=2):
+        for tile in runTileScan(center_x_micrometer=tile_scan_start_x, 
+                                                   center_y_micrometer=tile_scan_start_y, 
+                                                   range_x_micrometer=300,
+                                                   step_x_micrometer=150,
+                                                   exposure_time=70, 
+                                                   illumination_intensity=356, 
+                                                   gain=4):
             segmented_image = predict_stardist_he(tile)
             num_cells = count_segmented_cells(segmented_image)
             if num_cells < 10:
@@ -270,12 +281,12 @@ def smart_logic_loop(max_iterations=2):
         iteration = 0
         current_avg_stain_level = pre_wash_avg_stain_level
         while (
-            current_avg_stain_level > PERCENTAGE_OF_STAINED_CELLS_THRESHOLD
+            current_avg_stain_level > percentage_of_stained_cells_threshold
             and iteration < max_iterations
         ):
             goToPosition(
-                x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
-                y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+                x_micrometer=microscope_pickup_position_x,
+                y_micrometer=microscope_pickup_position_y,
             )
             pickup_slide_from_microscope()
             move_slide_to_opentron()
@@ -284,19 +295,27 @@ def smart_logic_loop(max_iterations=2):
 
             pickup_slide_from_opentron()
             goToPosition(
-                x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
-                y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+                x_micrometer=microscope_pickup_position_x,
+                y_micrometer=microscope_pickup_position_y,
             )
             move_slide_to_microscope()
 
             stain_levels = []
-            for tile in runTileScan(exposure_time=100, illumination_intensity=100, gain=2):
+            for tile in runTileScan(
+                center_x_micrometer=tile_scan_start_x,
+                center_y_micrometer=tile_scan_start_y,
+                range_x_micrometer=300,
+                step_x_micrometer=150,
+                exposure_time=70,
+                illumination_intensity=356,
+                gain=4,
+            ):
                 segmented_image = predict_stardist_he(tile)
                 num_cells = count_segmented_cells(segmented_image)
                 if num_cells < 10:
                     continue
                 ihc_image = rgb_to_ihc_image(tile)  
-                stain_level = residual_stain_quantity(ihc_image, stain_threshold=STAIN_THRESHOLD)
+                stain_level = residual_stain_quantity(ihc_image, stain_threshold=stain_threshold)
                 stain_levels.append(stain_level)
             current_avg_stain_level = np.mean(stain_levels)
             log(
@@ -309,8 +328,8 @@ def smart_logic_loop(max_iterations=2):
             log(f"Iteration {iteration} after wash avg stain level: {current_avg_stain_level} was sufficient.\n Washing successful.")
 
         goToPosition(
-            x_micrometer=MICROSCOPE_PICKUP_POSITION_X,
-            y_micrometer=MICROSCOPE_PICKUP_POSITION_Y,
+            x_micrometer=microscope_pickup_position_x,
+            y_micrometer=microscope_pickup_position_y,
         )
         pickup_slide_from_microscope()
         move_slide_to_pickupstation()
