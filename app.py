@@ -1,318 +1,224 @@
-from kraph.api.schema import (
-    EntityRoleDefinitionInput,
-    MetricKind,
-    VariableDefinitionInput,
-    create_entity_category,
-    create_graph,
-    create_measurement_category,
-    create_protocol_event_category,
-    create_structure_metric,
-)
+from typing import Annotated, Dict, Generator, Optional, Protocol
+from dataclasses import field
+
 from mikro_next.api.schema import Image
-from arkitekt_next import easy, protocol, log, register
-import numpy as np
+from arkitekt_next import easy, register, state, startup, log
+from rekuest_next.declare import declare, declare_state
+from rekuest_next.structures.model import model
+from rekuest_next.widgets import withDescription, withStateChoices
 
 
-# Not that everything is a stub and needs to be implemented with real logic
-# by other apps or humans, we use standard python function and the ellipsis
-# (...) to indicate that the function is not implemented here.
-
-# when using the @protocol decorator, all functions are filtered that have the same
-# output and input types, so that they can be replaced by other implementations
-# in the future this will be more fine grained, e.g by passing which collections
-# the function should use to find implementations
-# e.g. @protocol(collections=["segmentation"])
+# The StainStorm meta-app no longer ships its own @protocol stubs. Instead it
+# *declares* the remote apps it depends on (robot, opentrons, microscope,
+# segmenter, analyzer) as typing.Protocol classes. arkitekt-next injects a live
+# proxy for each declared dependency as a typed parameter of the registered
+# function, so the orchestration below simply calls methods on those proxies.
 
 
-@protocol
-def move_robot_slide_holder():
-    "A function to move the robot to the slide holder"
-
-    ...
+# --- Declared remote state shapes ------------------------------------------
+# @declare_state describes the observable state an app publishes. We reference
+# fields of these states from input widgets via withStateChoices(...).
 
 
-@protocol
-def grip_slide_holder():
-    "A function to grip the slide holder"
-    ...
+@declare_state
+class TrajectoriesState:
+    available_trajectories: Optional[list[str]] = None
 
 
-@protocol
-def release_slide_holder():
-    "A function to release the slide holder"
-    ...
+@declare_state
+class RunState:
+    available_protocols: Optional[list[str]] = None
 
 
-@protocol
-def pick_up_slide_in_tray(slider: int):
-    "A function to pick up a slide in the tray given its index"
-    ...
+# --- Declared remote apps ---------------------------------------------------
 
 
-@protocol
-def drop_slider_in_tray(slider: int):
-    "A function to drop a slide in the tray given its index"
-    ...
+@declare(app="arkirino")
+class ArkirinoLike(Protocol):
+    """The robot arm that moves slides between the tray, microscope and opentrons."""
+
+    trajectories: TrajectoriesState
+
+    def run_trajectory(
+        self, name: str, speed: Optional[int] = None, acceleration: Optional[int] = None
+    ) -> None:
+        """Execute a saved named trajectory on the robot."""
+        ...
+
+    def grip(self) -> None:
+        """Close the gripper to hold a slide."""
+        ...
+
+    def ungrip(self) -> None:
+        """Open the gripper to release a slide."""
+        ...
 
 
-@protocol
-def move_robot_to_microscope():
-    "A function to move the robot to the microscope"
-    ...
+@declare(app="OT2")
+class OT2Like(Protocol):
+    """The Opentrons OT-2 liquid handler that runs washing protocols."""
+
+    run: RunState
+
+    def run_protocol(self, protocol: str) -> None:
+        """Run a named protocol on the Opentrons (e.g. a washing step)."""
+        ...
 
 
-@protocol
-def segment_cells(image: Image) -> Image:
-    "A function to segment cells in an image"
-    ...
+@declare(app="openuc", min=1, max=1)
+class FrameLike(Protocol):
+    """The microscope that acquires images of a sample."""
+
+    def acquire_image(self) -> Image:
+        """Acquire an image from the microscope sensor."""
+        ...
+
+    def move_to_position(self, position: str) -> None:
+        """Move the stage to a named position."""
+        ...
 
 
-@protocol
-def calculate_percentage_of_stained_cells(image: Image) -> float:
-    "A function to calculate the percentage of stained cells in an image"
-    ...
+@declare(app="starmist", min=2, max=10)
+class SegmenterLike(Protocol):
+    """A segmentation app that labels cells in an image."""
+
+    def segment_image(self, image: Image) -> Image:
+        """Segment an image, returning a label mask of stained/unstained cells."""
+        ...
 
 
-@protocol
-def move_robot_to_opentrons():
-    "A function to move the robot to the OpenTrons robot"
-    ...
+# TODO: set app=... to the real analyzer app identifier once it is available.
+@declare(app="analyzer")
+class AnalyzerLike(Protocol):
+    """An analysis app that quantifies staining from a segmentation mask."""
+
+    def calculate_stain_percentage(self, image: Image) -> float:
+        """Calculate the percentage of stained cells from a label mask."""
+        ...
 
 
-@protocol
-def drop_slide():
-    "A function to drop a slide"
-    ...
+# --- Structured input model -------------------------------------------------
+# The withStateChoices paths reference the @register parameter names below
+# (`opentrons` and `robot`) followed by the declared-state attribute and field.
 
 
-@protocol
-def pickup_slide():
-    "A function to pick up a slide"
-    ...
-
-
-@protocol
-def acquire_image() -> Image:
-    "A function to acquire an image from the microscope"
-    ...
-
-
-@protocol
-def run_washing_protocol():
-    "A function to run the washing protocol"
-
-
-# depencies must be listed in this array to ensure they are available
-# when this function is called (will appear in the UI)
-@register(
-    dependencies=[
-        acquire_image,
-        segment_cells,
-        calculate_percentage_of_stained_cells,
-        move_robot_to_opentrons,
-        drop_slide,
-        pickup_slide,
-        move_robot_to_microscope,
-        grip_slide_holder,
-        move_robot_slide_holder,
-        release_slide_holder,
-        pick_up_slide_in_tray,
-        drop_slider_in_tray,
-        run_washing_protocol,
+@model
+class Slide:
+    name: Annotated[str, withDescription("Display name of the slide.")]
+    protocol: Annotated[
+        str,
+        withStateChoices("opentrons.run.available_protocols"),
+        withDescription("The Opentrons washing protocol to run for this slide."),
     ]
-)
-def smart_logic_loop(max_iterations=5):
-    num_sliders = 1
+    trajectory: Annotated[
+        str,
+        withStateChoices("robot.trajectories.available_trajectories"),
+        withDescription("The Arkirino trajectory to reach this slide in the tray."),
+    ]
 
-    for slider in range(num_sliders):
-        move_robot_slide_holder()
-        pick_up_slide_in_tray(slider)  # Use the current slider index
-        grip_slide_holder()
 
-        move_robot_to_microscope()
-        release_slide_holder()
+# --- Local app state --------------------------------------------------------
 
-        # Run initial acquisition and segmentation
-        image = acquire_image()
+
+@state
+class AppState:
+    currently_imaging_slide: Annotated[
+        Optional[str],
+        withDescription("The name of the slide currently being imaged."),
+    ] = None
+    latest_images: Annotated[
+        Dict[str, Image],
+        withDescription("The latest acquired image per slide name."),
+    ] = field(default_factory=dict)
+    latest_segmented: Annotated[
+        Dict[str, Image],
+        withDescription("The latest segmentation mask per slide name."),
+    ] = field(default_factory=dict)
+
+
+@startup
+def startup_hook() -> AppState:
+    """Initialize the app state when the agent boots."""
+    return AppState()
+
+
+# --- The registered protocol ------------------------------------------------
+
+
+@register
+def run_stainstorm(
+    robot: ArkirinoLike,
+    opentrons: OT2Like,
+    microscope: FrameLike,
+    segmenter: SegmenterLike,
+    analyzer: AnalyzerLike,
+    loaded_slides: list[Slide],
+    microscope_trajectory: Annotated[
+        str,
+        withStateChoices("robot.trajectories.available_trajectories"),
+        withDescription("The Arkirino trajectory to reach the microscope."),
+    ],
+    opentrons_trajectory: Annotated[
+        str,
+        withStateChoices("robot.trajectories.available_trajectories"),
+        withDescription("The Arkirino trajectory to reach the Opentrons."),
+    ],
+    max_iterations: int = 5,
+) -> Generator[Image, None, None]:
+    """Iteratively image, segment and wash each slide until it is sufficiently destained.
+
+    For every loaded slide the robot carries it to the microscope, an image is
+    acquired and segmented, and the stain percentage is measured. While the
+    sample is still over-stained the slide is taken to the Opentrons for a
+    washing step and re-imaged, up to ``max_iterations`` times.
+    """
+
+    for slide in loaded_slides:
+        # Fetch the slide from the tray and carry it to the microscope.
+        robot.run_trajectory(slide.trajectory)
+        robot.grip()
+        robot.run_trajectory(microscope_trajectory)
+        robot.ungrip()
+        microscope.move_to_position("imaging_position")
+
+        # Initial acquisition and segmentation.
+        image = microscope.acquire_image()
+        yield image
+        segmented = segmenter.segment_image(image)
+        yield segmented
+        stain = analyzer.calculate_stain_percentage(segmented)
+
         iteration = 0
-        segmented_image = segment_cells(image)
-        current_stain_percentage = calculate_percentage_of_stained_cells(
-            segmented_image
-        )
+        while stain > 0.8 and iteration < max_iterations:
+            # Carry the slide to the Opentrons and run the washing protocol.
+            robot.grip()
+            robot.run_trajectory(opentrons_trajectory)
+            robot.ungrip()
+            opentrons.run_protocol(slide.protocol)
 
-        while current_stain_percentage > 0.8 and iteration < max_iterations:
-            pickup_slide()
-            move_robot_to_opentrons()
-            drop_slide()
+            # Bring it back to the microscope and re-image.
+            robot.grip()
+            robot.run_trajectory(microscope_trajectory)
+            robot.ungrip()
 
-            run_washing_protocol()
-
-            pickup_slide()
-            move_robot_to_microscope()
-            drop_slide()
-
-            image = acquire_image()
-            segmented_image = segment_cells(image)
-            current_stain_percentage = calculate_percentage_of_stained_cells(
-                segmented_image
-            )
+            image = microscope.acquire_image()
+            yield image
+            segmented = segmenter.segment_image(image)
+            yield segmented
+            stain = analyzer.calculate_stain_percentage(segmented)
 
             iteration += 1
-            log(
-                f"Iteration {iteration}, Stain Percentage: {current_stain_percentage:.2%}"
-            )
+            log(f"Iteration {iteration}, Stain Percentage: {stain:.2%}")
 
         if iteration == max_iterations:
             log("Reached maximum iterations without sufficient staining.")
 
-        pickup_slide()
-        move_robot_slide_holder()
-        drop_slider_in_tray(slider)
-
-    return
-
-
-@register(
-    dependencies=[
-        acquire_image,
-        segment_cells,
-        calculate_percentage_of_stained_cells,
-        move_robot_to_opentrons,
-        drop_slide,
-        pickup_slide,
-        move_robot_to_microscope,
-        grip_slide_holder,
-        move_robot_slide_holder,
-        release_slide_holder,
-        pick_up_slide_in_tray,
-        drop_slider_in_tray,
-        run_washing_protocol,
-    ]
-)
-def graphed_smart_logic_loop(graph_name="StainStorm Graph", max_iterations=5):
-    num_sliders = 5
-
-    graph = create_graph(name=graph_name, description="Graph for StainStorm protocol")
-
-    # Define categories and protocols
-    # Our subject is a biological sample on a slide
-    Sample = create_entity_category(
-        label="Sample", description="A biological sample on a slide", graph=graph
-    )
-
-    # Measurement Categories describe what kind of measurements we are taking
-    # to monitor the staining process
-    ACQUISITION_FOR = create_measurement_category(
-        label="Acquisition of",
-        description="The image is a microscopic acquisition of a sample",
-        graph=graph,
-        structure_definition=Image,
-        entity_definition=Sample,
-    )
-
-    LABELMASK_FOR = create_measurement_category(
-        label="Labelmask for",
-        description="The image is a segmentation mask labeling stained cells in a sample as well as unstained cells",
-        graph=graph,
-        structure_definition=Image,
-        entity_definition=Sample,
-    )
-
-    # Protocol Event Categories describe the events in our protocol
-    # Each washing step is an event with a duration and associated slide
-    WASHING_STEP = create_protocol_event_category(
-        graph=graph,
-        label="OpenTrons Washing Step",
-        description="Event representing a washing step performed by the OpenTrons robot",
-        variable_definitions=[
-            VariableDefinitionInput(
-                param="duration",
-                valueKind=MetricKind.FLOAT,
-                description="Duration of the washing step in minutes",
-            )
-        ],
-        source_entity_roles=[
-            EntityRoleDefinitionInput(
-                role="slide",
-                description="The slide being processed",
-                label="Slide",
-                categoryDefinition=Sample,
-            )
-        ],
-    )
-
-    # Create samples for each slide
-    loaded_samples = [Sample(name=f"Sample {i + 1}") for i in range(num_sliders)]
-
-    for slider, sample in enumerate(loaded_samples):
-        move_robot_slide_holder()
-        pick_up_slide_in_tray(slider)  # Use the current slider index
-        grip_slide_holder()
-
-        move_robot_to_microscope()
-        release_slide_holder()
-
-        # Run initial acquisition and segmentation
-        image = acquire_image()
-        image | ACQUISITION_FOR() | sample
-
-        iteration = 0
-        segmented_image = segment_cells(image)
-
-        current_stain_percentage = calculate_percentage_of_stained_cells(
-            segmented_image
-        )
-
-        segmented_image | LABELMASK_FOR() | sample
-
-        create_structure_metric(
-            structure=segmented_image,
-            label="stain_percentage",
-            value=current_stain_percentage,
-            graph=graph,
-            metric_kind=MetricKind.FLOAT,
-        )
-
-        while current_stain_percentage > 0.2 and iteration < max_iterations:
-            pickup_slide()
-            move_robot_to_opentrons()
-            drop_slide()
-
-            run_washing_protocol()
-            washing_event = WASHING_STEP(slide=sample, duration=15.0)
-
-            pickup_slide()
-            move_robot_to_microscope()
-            drop_slide()
-
-            image = acquire_image()
-            image | ACQUISITION_FOR() | sample
-            segmented_image = segment_cells(image)
-            segmented_image | LABELMASK_FOR() | sample
-            current_stain_percentage = calculate_percentage_of_stained_cells(
-                segmented_image
-            )
-
-            create_structure_metric(
-                structure=segmented_image,
-                label="stain_percentage",
-                value=current_stain_percentage,
-                graph=graph,
-                metric_kind=MetricKind.FLOAT,
-            )
-
-            iteration += 1
-            log(
-                f"Iteration {iteration}, Stain Percentage: {current_stain_percentage:.2%}"
-            )
-
-        pickup_slide()
-        move_robot_slide_holder()
-        drop_slider_in_tray(slider)
-
-    return
+        # Return the slide to its place in the tray.
+        robot.grip()
+        robot.run_trajectory(slide.trajectory)
+        robot.ungrip()
 
 
 if __name__ == "__main__":
-    with easy() as e:
-        e.rekuest.run()
+    with easy(identifier="stainstorm") as app:
+        app.run()
