@@ -1,5 +1,0 @@
-mutation PutIntoDataset($images: [ID!]!, $datasetId: ID!) {
-  putImagesInDataset(input: { selfs: $images, other: $datasetId }) {
-    id
-  }
-}

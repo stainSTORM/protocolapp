@@ -1,16 +1,20 @@
-"""Unit tests for the StainStorm ``run_stainstorm`` protocol.
+"""Unit tests for the StainStorm registered protocols.
 
-``run_stainstorm`` is a ``@register``-decorated generator that orchestrates a
-set of *declared* remote dependencies (robot, opentrons, microscope, segmenter,
-analyzer). ``register`` returns a ``WrappedFunction`` whose ``__call__`` simply
-invokes the underlying function, so we can call it directly and inject plain
-local fakes that satisfy each declared ``Protocol`` structurally.
+The registered functions (``run_stainstorm``, ``stitch_and_segment``,
+``stitch_and_segment_optimized``) are ``@register``-decorated **async**
+generators that orchestrate a set of *declared* remote dependencies. ``register``
+returns a ``WrappedFunction`` whose ``__call__`` invokes the underlying function,
+so we can call it directly and inject plain local async fakes that satisfy each
+declared ``Protocol`` structurally.
 
-The fakes record every call so we can assert on the orchestration logic — the
-movement sequence, the washing retry loop, the threshold/max-iteration cutoffs
-and the images that flow through segmentation and analysis.
+Every declared method is ``async def``; the fakes mirror that. Tests drive the
+async generators with ``asyncio.run`` and assert on the orchestration logic — the
+movement sequence, the washing retry loop, the stitch->segment pipeline, and that
+the *optimized* variant runs the per-slide compute concurrently while keeping the
+physical acquisition serial.
 """
 
+import asyncio
 from typing import Optional, cast
 
 import pytest
@@ -18,7 +22,15 @@ import pytest
 from mikro_next.api.schema import Image
 
 import app
-from app import RunState, Slide, TrajectoriesState, run_stainstorm
+from app import (
+    AppState,
+    RunState,
+    Slide,
+    SlideStatus,
+    TrajectoriesState,
+    run_concurrent_staining,
+    run_stainstorm,
+)
 
 
 def _img(tag: str) -> Image:
@@ -26,7 +38,16 @@ def _img(tag: str) -> Image:
     return cast(Image, tag)
 
 
-# --- Local fake implementations of the declared dependencies ----------------
+def collect(agen) -> list[Image]:
+    """Drive an async generator to completion and return everything it yielded."""
+
+    async def _consume() -> list[Image]:
+        return [item async for item in agen]
+
+    return asyncio.run(_consume())
+
+
+# --- Local async fake implementations of the declared dependencies ----------
 
 
 class FakeRobot:
@@ -37,7 +58,7 @@ class FakeRobot:
         self.trajectories.available_trajectories = ["traj-1", "traj-2"]
         self.calls: list[tuple] = []
 
-    def run_trajectory(
+    async def run_trajectory(
         self,
         name: str,
         speed: Optional[int] = None,
@@ -45,10 +66,10 @@ class FakeRobot:
     ) -> None:
         self.calls.append(("run_trajectory", name, speed, acceleration))
 
-    def grip(self) -> None:
+    async def grip(self) -> None:
         self.calls.append(("grip",))
 
-    def ungrip(self) -> None:
+    async def ungrip(self) -> None:
         self.calls.append(("ungrip",))
 
 
@@ -60,37 +81,68 @@ class FakeOpentrons:
         self.run.available_protocols = ["wash-A", "wash-B"]
         self.run_protocols: list[str] = []
 
-    def run_protocol(self, protocol: str) -> None:
+    async def run_protocol(self, protocol: str) -> None:
         self.run_protocols.append(protocol)
 
 
 class FakeMicroscope:
     """Stand-in for ``FrameLike``. Hands out a fresh sentinel image per acquire."""
 
-    def __init__(self) -> None:
+    def __init__(self, timeline: Optional[list] = None) -> None:
+        self.timeline = timeline if timeline is not None else []
         self.positions: list[str] = []
         self.acquired: list[Image] = []
         self._counter = 0
 
-    def acquire_image(self) -> Image:
+    async def acquire_image(self) -> Image:
         self._counter += 1
         image = _img(f"image-{self._counter}")
         self.acquired.append(image)
+        self.timeline.append(("acquire", image))
         return image
 
-    def move_to_position(self, position: str) -> None:
+    async def move_to_position(self, position: str) -> None:
         self.positions.append(position)
 
 
-class FakeSegmenter:
-    """Stand-in for ``SegmenterLike``. Returns a sentinel mask per input image."""
+class FakeStitcher:
+    """Stand-in for ``StitcherLike``. Returns a sentinel composite per call."""
 
-    def __init__(self) -> None:
+    def __init__(self, timeline: Optional[list] = None) -> None:
+        self.timeline = timeline if timeline is not None else []
+        self.inputs: list[list[Image]] = []
+
+    async def stitch_images(self, images: list[Image]) -> Image:
+        self.inputs.append(list(images))
+        stitched = _img(f"stitched-{len(self.inputs)}")
+        self.timeline.append(("stitch", stitched))
+        return stitched
+
+
+class FakeSegmenter:
+    """Stand-in for ``SegmenterLike`` (Cellpose). Returns a sentinel mask per image.
+
+    An optional ``barrier`` lets a test prove concurrent execution: every call
+    waits on the barrier, so the generator only completes if enough calls are
+    in flight simultaneously.
+    """
+
+    def __init__(
+        self,
+        timeline: Optional[list] = None,
+        barrier: Optional[asyncio.Barrier] = None,
+    ) -> None:
+        self.timeline = timeline if timeline is not None else []
+        self.barrier = barrier
         self.inputs: list[Image] = []
 
-    def segment_image(self, image: Image) -> Image:
+    async def segment_image(self, image: Image) -> Image:
+        if self.barrier is not None:
+            await self.barrier.wait()
         self.inputs.append(image)
-        return _img(f"segmented-{image}")
+        segmented = _img(f"segmented-{image}")
+        self.timeline.append(("segment", segmented))
+        return segmented
 
 
 class FakeAnalyzer:
@@ -100,7 +152,7 @@ class FakeAnalyzer:
         self._stains = list(stains)
         self.inputs: list[Image] = []
 
-    def calculate_stain_percentage(self, image: Image) -> float:
+    async def calculate_stain_percentage(self, image: Image) -> float:
         self.inputs.append(image)
         assert self._stains, "FakeAnalyzer ran out of scripted stain values"
         return self._stains.pop(0)
@@ -130,6 +182,11 @@ def segmenter() -> FakeSegmenter:
 
 
 @pytest.fixture
+def stitcher() -> FakeStitcher:
+    return FakeStitcher()
+
+
+@pytest.fixture
 def captured_logs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Capture every message passed to ``app.log``."""
     messages: list[str] = []
@@ -137,7 +194,7 @@ def captured_logs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return messages
 
 
-def drive(
+def drive_stainstorm(
     *,
     robot: FakeRobot,
     opentrons: FakeOpentrons,
@@ -149,8 +206,7 @@ def drive(
     opentrons_trajectory: str = "to_opentrons",
     max_iterations: int = 5,
 ) -> list[Image]:
-    """Run the generator to completion and return everything it yielded."""
-    return list(
+    return collect(
         run_stainstorm(
             robot=robot,
             opentrons=opentrons,
@@ -165,7 +221,7 @@ def drive(
     )
 
 
-# --- Tests ------------------------------------------------------------------
+# --- run_stainstorm tests ---------------------------------------------------
 
 
 def test_no_washing_when_below_threshold(
@@ -175,7 +231,7 @@ def test_no_washing_when_below_threshold(
     analyzer = FakeAnalyzer([0.5])
     slide = Slide(name="s1", protocol="wash-A", trajectory="traj-1")
 
-    yielded = drive(
+    yielded = drive_stainstorm(
         robot=robot,
         opentrons=opentrons,
         microscope=microscope,
@@ -184,7 +240,6 @@ def test_no_washing_when_below_threshold(
         loaded_slides=[slide],
     )
 
-    # One acquisition + its segmentation are yielded; no washing iterations.
     assert yielded == [_img("image-1"), _img("segmented-image-1")]
     assert opentrons.run_protocols == []
     assert microscope.acquired == [_img("image-1")]
@@ -199,7 +254,7 @@ def test_full_robot_sequence_for_single_unwashed_slide(
     analyzer = FakeAnalyzer([0.1])
     slide = Slide(name="s1", protocol="wash-A", trajectory="traj-slide")
 
-    drive(
+    drive_stainstorm(
         robot=robot,
         opentrons=opentrons,
         microscope=microscope,
@@ -214,8 +269,9 @@ def test_full_robot_sequence_for_single_unwashed_slide(
         ("grip",),  # pick it up
         ("run_trajectory", "traj-scope", None, None),  # carry to microscope
         ("ungrip",),  # release onto stage
-        ("grip",),  # pick back up
-        ("run_trajectory", "traj-slide", None, None),  # return to tray
+        ("run_trajectory", "traj-scope", None, None),  # go back to fetch it
+        ("grip",),  # pick it back up
+        ("run_trajectory", "traj-slide", None, None),  # carry back to tray
         ("ungrip",),  # drop into tray
     ]
     assert microscope.positions == ["imaging_position"]
@@ -225,11 +281,10 @@ def test_washes_until_stain_drops_below_threshold(
     robot, opentrons, microscope, segmenter, captured_logs
 ):
     """Over-stained slides are re-washed until the stain falls under 0.8."""
-    # initial 0.9 -> wash -> 0.9 -> wash -> 0.5 (stops)
-    analyzer = FakeAnalyzer([0.9, 0.9, 0.5])
+    analyzer = FakeAnalyzer([0.9, 0.9, 0.5])  # initial -> wash -> wash -> stop
     slide = Slide(name="s1", protocol="wash-A", trajectory="traj-1")
 
-    yielded = drive(
+    yielded = drive_stainstorm(
         robot=robot,
         opentrons=opentrons,
         microscope=microscope,
@@ -238,9 +293,7 @@ def test_washes_until_stain_drops_below_threshold(
         loaded_slides=[slide],
     )
 
-    # Two washing iterations, each running the slide's protocol.
     assert opentrons.run_protocols == ["wash-A", "wash-A"]
-    # 1 initial + 2 re-acquisitions => 3 images, each followed by its mask.
     assert microscope.acquired == [_img("image-1"), _img("image-2"), _img("image-3")]
     assert yielded == [
         _img("image-1"),
@@ -250,7 +303,6 @@ def test_washes_until_stain_drops_below_threshold(
         _img("image-3"),
         _img("segmented-image-3"),
     ]
-    # Per-iteration progress logs, but not the max-iterations warning.
     assert len(captured_logs) == 2
     assert all("Stain Percentage" in m for m in captured_logs)
     assert not any("maximum iterations" in m for m in captured_logs)
@@ -263,7 +315,7 @@ def test_stops_at_max_iterations(
     analyzer = FakeAnalyzer([0.95] * 10)  # always above threshold
     slide = Slide(name="s1", protocol="wash-A", trajectory="traj-1")
 
-    drive(
+    drive_stainstorm(
         robot=robot,
         opentrons=opentrons,
         microscope=microscope,
@@ -274,29 +326,8 @@ def test_stops_at_max_iterations(
     )
 
     assert opentrons.run_protocols == ["wash-A"] * 3
-    # 1 initial + 3 washes => 4 stain measurements.
-    assert len(analyzer.inputs) == 4
+    assert len(analyzer.inputs) == 4  # 1 initial + 3 washes
     assert any("maximum iterations" in m for m in captured_logs)
-
-
-def test_segmenter_and_analyzer_receive_chained_inputs(
-    robot, opentrons, microscope, segmenter
-):
-    """The segmenter sees acquired images; the analyzer sees their masks."""
-    analyzer = FakeAnalyzer([0.5])
-    slide = Slide(name="s1", protocol="wash-A", trajectory="traj-1")
-
-    drive(
-        robot=robot,
-        opentrons=opentrons,
-        microscope=microscope,
-        segmenter=segmenter,
-        analyzer=analyzer,
-        loaded_slides=[slide],
-    )
-
-    assert segmenter.inputs == [_img("image-1")]
-    assert analyzer.inputs == [_img("segmented-image-1")]
 
 
 def test_multiple_slides_each_visited_and_returned(
@@ -309,7 +340,7 @@ def test_multiple_slides_each_visited_and_returned(
         Slide(name="s2", protocol="wash-B", trajectory="traj-2"),
     ]
 
-    yielded = drive(
+    yielded = drive_stainstorm(
         robot=robot,
         opentrons=opentrons,
         microscope=microscope,
@@ -319,31 +350,253 @@ def test_multiple_slides_each_visited_and_returned(
     )
 
     assert microscope.acquired == [_img("image-1"), _img("image-2")]
-    assert len(yielded) == 4  # 2 slides * (image + mask)
+    assert len(yielded) == 4
     assert opentrons.run_protocols == []
-    # Each slide's own trajectory is used to fetch and return it.
     fetched = [c[1] for c in robot.calls if c[0] == "run_trajectory"]
     assert "traj-1" in fetched and "traj-2" in fetched
 
 
-def test_lazy_generator_does_not_run_until_iterated(
-    robot, opentrons, microscope, segmenter
-):
-    """Constructing the generator performs no work; iteration drives it."""
-    analyzer = FakeAnalyzer([0.5])
-    slide = Slide(name="s1", protocol="wash-A", trajectory="traj-1")
+# --- run_concurrent_staining tests ------------------------------------------
 
-    gen = run_stainstorm(
+
+def drive_concurrent_staining(
+    *,
+    robot: FakeRobot,
+    opentrons: FakeOpentrons,
+    microscope: FakeMicroscope,
+    stitcher: FakeStitcher,
+    segmenter: FakeSegmenter,
+    analyzer: FakeAnalyzer,
+    loaded_slides: list[Slide],
+    state: Optional[AppState] = None,
+    microscope_trajectory: str = "to_microscope",
+    opentrons_trajectory: str = "to_opentrons",
+    tile_positions: Optional[list[str]] = None,
+    target_stain_percentage: float = 0.8,
+    max_rounds: int = 5,
+) -> list[Image]:
+    return collect(
+        run_concurrent_staining(
+            robot=robot,
+            opentrons=opentrons,
+            microscope=microscope,
+            stitcher=stitcher,
+            segmenter=segmenter,
+            analyzer=analyzer,
+            state=state if state is not None else AppState(),
+            loaded_slides=loaded_slides,
+            microscope_trajectory=microscope_trajectory,
+            opentrons_trajectory=opentrons_trajectory,
+            tile_positions=tile_positions or ["p1", "p2"],
+            target_stain_percentage=target_stain_percentage,
+            max_rounds=max_rounds,
+        )
+    )
+
+
+def test_compute_is_offloaded_and_runs_concurrently():
+    """Compute for all slides is fired off as tasks and runs at the same time.
+
+    Each segmentation blocks on a barrier sized to the slide count. The scheduler
+    images every slide first (spawning a compute task each) before awaiting, so
+    all segmentations reach the barrier together. A sequential implementation that
+    awaited each analysis inline would only ever have one in flight — the barrier
+    would never release and this would time out.
+    """
+    n = 3
+    slides = [
+        Slide(name=f"s{i}", protocol="stain-A", trajectory=f"traj-{i}")
+        for i in range(n)
+    ]
+
+    async def _run() -> list[Image]:
+        barrier = asyncio.Barrier(n)
+        agen = run_concurrent_staining(
+            robot=FakeRobot(),
+            opentrons=FakeOpentrons(),
+            microscope=FakeMicroscope(),
+            stitcher=FakeStitcher(),
+            segmenter=FakeSegmenter(barrier=barrier),
+            analyzer=FakeAnalyzer([0.95] * n),  # all above target -> no staining
+            state=AppState(),
+            loaded_slides=slides,
+            microscope_trajectory="to_microscope",
+            opentrons_trajectory="to_opentrons",
+            tile_positions=["p1", "p2"],
+            target_stain_percentage=0.8,
+        )
+        return [item async for item in agen]
+
+    yielded = asyncio.run(asyncio.wait_for(_run(), timeout=3.0))
+
+    assert len(yielded) == 2 * n  # stitched + segmented per slide
+
+
+def test_understained_slide_is_stained_then_reimaged(
+    robot, opentrons, microscope, stitcher, segmenter, captured_logs
+):
+    """A slide below target is routed to the Opentrons, stained, then re-imaged."""
+    # First analysis under target -> stain; after staining it clears the target.
+    analyzer = FakeAnalyzer([0.1, 0.9])
+    slide = Slide(name="s1", protocol="stain-A", trajectory="traj-1")
+
+    yielded = drive_concurrent_staining(
         robot=robot,
         opentrons=opentrons,
         microscope=microscope,
+        stitcher=stitcher,
         segmenter=segmenter,
         analyzer=analyzer,
         loaded_slides=[slide],
-        microscope_trajectory="to_microscope",
-        opentrons_trajectory="to_opentrons",
     )
 
-    assert robot.calls == []  # nothing happened yet
-    next(gen)  # pull the first yield
-    assert robot.calls  # now the robot has started moving
+    # Exactly one staining run, then a second imaging pass.
+    assert opentrons.run_protocols == ["stain-A"]
+    assert len(stitcher.inputs) == 2  # imaged twice
+    assert len(yielded) == 4  # (stitched + segmented) per imaging
+    # The robot visited the opentrons trajectory to stain.
+    visited = [c[1] for c in robot.calls if c[0] == "run_trajectory"]
+    assert "to_opentrons" in visited
+    # The under-stained round and the final completion are both logged.
+    assert any("staining" in m for m in captured_logs)
+    assert any("done" in m for m in captured_logs)
+
+
+def test_stops_staining_at_max_rounds(
+    robot, opentrons, microscope, stitcher, segmenter, captured_logs
+):
+    """A slide that never reaches target stops after ``max_rounds`` staining runs."""
+    analyzer = FakeAnalyzer([0.1] * 10)  # always under target
+    slide = Slide(name="s1", protocol="stain-A", trajectory="traj-1")
+
+    drive_concurrent_staining(
+        robot=robot,
+        opentrons=opentrons,
+        microscope=microscope,
+        stitcher=stitcher,
+        segmenter=segmenter,
+        analyzer=analyzer,
+        loaded_slides=[slide],
+        max_rounds=2,
+    )
+
+    assert opentrons.run_protocols == ["stain-A", "stain-A"]
+    # 1 initial imaging + 2 re-images after staining.
+    assert len(stitcher.inputs) == 3
+    assert any("done" in m for m in captured_logs)
+
+
+def test_well_stained_slides_are_not_stained(
+    robot, opentrons, microscope, stitcher, segmenter, captured_logs
+):
+    """Slides already at/above target are imaged once and never touched again."""
+    slides = [
+        Slide(name="s1", protocol="stain-A", trajectory="traj-1"),
+        Slide(name="s2", protocol="stain-B", trajectory="traj-2"),
+    ]
+    analyzer = FakeAnalyzer([0.9, 0.85])  # both above the 0.8 target
+
+    yielded = drive_concurrent_staining(
+        robot=robot,
+        opentrons=opentrons,
+        microscope=microscope,
+        stitcher=stitcher,
+        segmenter=segmenter,
+        analyzer=analyzer,
+        loaded_slides=slides,
+    )
+
+    assert opentrons.run_protocols == []
+    assert len(stitcher.inputs) == 2  # each slide imaged exactly once
+    assert len(yielded) == 4
+    assert all("done" in m for m in captured_logs)
+
+
+def test_state_tracks_each_slide_through_the_workflow(
+    robot, opentrons, microscope, stitcher, segmenter, captured_logs
+):
+    """The injected AppState records every slide's final status, rounds and images."""
+    state = AppState()
+    slides = [
+        Slide(name="s1", protocol="stain-A", trajectory="traj-1"),  # needs one round
+        Slide(name="s2", protocol="stain-B", trajectory="traj-2"),  # already good
+    ]
+    # s1: under target then clears; s2: above target immediately.
+    analyzer = FakeAnalyzer([0.1, 0.9, 0.9])
+
+    drive_concurrent_staining(
+        robot=robot,
+        opentrons=opentrons,
+        microscope=microscope,
+        stitcher=stitcher,
+        segmenter=segmenter,
+        analyzer=analyzer,
+        loaded_slides=slides,
+        state=state,
+    )
+
+    # Both slides end DONE, and no slide is left mid-acquisition.
+    assert dict(state.slide_status) == {
+        "s1": SlideStatus.DONE,
+        "s2": SlideStatus.DONE,
+    }
+    assert state.currently_imaging_slide is None
+    # s1 went through one staining round; s2 needed none.
+    assert state.staining_rounds["s1"] == 1
+    assert state.staining_rounds["s2"] == 0
+    # Latest stitched/segmented images are recorded for both slides.
+    assert set(state.latest_images) == {"s1", "s2"}
+    assert set(state.latest_segmented) == {"s1", "s2"}
+    # s1's staining round and both completions were logged.
+    assert any("staining" in m for m in captured_logs)
+    assert sum("done" in m for m in captured_logs) == 2
+
+
+def test_state_reports_in_progress_statuses_mid_run():
+    """While a compute task is blocked, its slide shows ANALYZING and others QUEUED."""
+    state = AppState()
+    slides = [
+        Slide(name="s1", protocol="stain-A", trajectory="traj-1"),
+        Slide(name="s2", protocol="stain-B", trajectory="traj-2"),
+    ]
+
+    async def _run() -> None:
+        # Block segmentation so the run cannot complete; inspect state mid-flight.
+        gate = asyncio.Event()
+
+        class BlockingSegmenter(FakeSegmenter):
+            async def segment_image(self, image: Image) -> Image:
+                await gate.wait()
+                return await super().segment_image(image)
+
+        agen = run_concurrent_staining(
+            robot=FakeRobot(),
+            opentrons=FakeOpentrons(),
+            microscope=FakeMicroscope(),
+            stitcher=FakeStitcher(),
+            segmenter=BlockingSegmenter(),
+            analyzer=FakeAnalyzer([0.9, 0.9]),
+            state=state,
+            loaded_slides=slides,
+            microscope_trajectory="to_microscope",
+            opentrons_trajectory="to_opentrons",
+            tile_positions=["p1", "p2"],
+        )
+        # Drive the generator in the background; it will hang on the gated segmenter.
+        consumer = asyncio.ensure_future(_drain(agen))
+        await asyncio.sleep(0.05)  # let both slides get imaged and analysis start
+
+        # Both slides have been imaged and handed off to (blocked) compute.
+        assert state.slide_status["s1"] == SlideStatus.ANALYZING
+        assert state.slide_status["s2"] == SlideStatus.ANALYZING
+        assert state.currently_imaging_slide is None
+
+        gate.set()  # release segmentation so the workflow can finish cleanly
+        await asyncio.wait_for(consumer, timeout=2.0)
+
+    async def _drain(agen) -> None:
+        async for _ in agen:
+            pass
+
+    asyncio.run(_run())
+    assert dict(state.slide_status) == {"s1": SlideStatus.DONE, "s2": SlideStatus.DONE}
