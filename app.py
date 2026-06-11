@@ -1,75 +1,62 @@
 import asyncio
+import os
 from collections import deque
-from typing import Annotated, AsyncGenerator, Dict, Optional, Protocol
+from dotenv import load_dotenv
+from typing import Annotated, AsyncGenerator, Dict, Literal, Optional, Protocol
 from dataclasses import field
 
 from mikro_next.api.schema import Image
 from arkitekt_next import easy, register, state, startup, log
-from rekuest_next.declare import declare, declare_state
+from rekuest_next.declare import declare
 from rekuest_next.structures.model import model
-from rekuest_next.widgets import withDescription, withStateChoices
-
-
-# The StainStorm meta-app no longer ships its own @protocol stubs. Instead it
-# *declares* the remote apps it depends on (robot, opentrons, microscope,
-# stitcher, segmenter, analyzer) as typing.Protocol classes. arkitekt-next
-# injects a live proxy for each declared dependency as a typed parameter of the
-# registered function, so the orchestration below simply awaits methods on those
-# proxies. All declared methods are async, so independent remote calls can be
-# fanned out concurrently with asyncio.gather / asyncio.as_completed.
-
-
-# --- Declared remote state shapes ------------------------------------------
-# @declare_state describes the observable state an app publishes. We reference
-# fields of these states from input widgets via withStateChoices(...).
-
-
-@declare_state
-class TrajectoriesState:
-    available_trajectories: Optional[list[str]] = None
-
-
-@declare_state
-class RunState:
-    available_protocols: Optional[list[str]] = None
+from rekuest_next.widgets import withDescription
 
 
 # --- Declared remote apps ---------------------------------------------------
 
+@declare(app="fairinogale")
+class FarinoLike(Protocol):
+    """The robot arm that moves slides between the pickup station, opentrons and microscope."""
 
-@declare(app="arkirino")
-class ArkirinoLike(Protocol):
-    """The robot arm that moves slides between the tray, microscope and opentrons."""
-
-    trajectories: TrajectoriesState
-
-    async def run_trajectory(
-        self, name: str, speed: Optional[int] = None, acceleration: Optional[int] = None
-    ) -> None:
-        """Execute a saved named trajectory on the robot."""
+    async def pickup_slide_from_pickupstation(self) -> None:
+        """Pick up a slide from the pickup/tray station."""
         ...
 
-    async def grip(self) -> None:
-        """Close the gripper to hold a slide."""
+    async def move_slide_to_opentron(self) -> None:
+        """Place the currently held slide onto the Opentrons deck."""
         ...
 
-    async def ungrip(self) -> None:
-        """Open the gripper to release a slide."""
+    async def pickup_slide_from_opentron(self) -> None:
+        """Pick up the slide from the Opentrons deck."""
+        ...
+
+    async def move_slide_to_microscope(self) -> None:
+        """Place the currently held slide onto the microscope stage."""
+        ...
+
+    async def pickup_slide_from_microscope(self) -> None:
+        """Pick up the slide from the microscope stage."""
+        ...
+
+    async def move_slide_to_pickupstation(self) -> None:
+        """Return the currently held slide to the pickup/tray station."""
         ...
 
 
 @declare(app="OT2")
 class OT2Like(Protocol):
-    """The Opentrons OT-2 liquid handler that runs washing protocols."""
+    """The Opentrons OT-2 liquid handler that runs washing and staining protocols."""
 
-    run: RunState
+    async def run_washing_protocol(self) -> None:
+        """Run the washing protocol on the Opentrons."""
+        ...
 
-    async def run_protocol(self, protocol: str) -> None:
-        """Run a named protocol on the Opentrons (e.g. a washing step)."""
+    async def run_staining_protocol(self) -> None:
+        """Run the staining protocol on the Opentrons."""
         ...
 
 
-@declare(app="openuc", min=1, max=1)
+@declare(app="frame", min=1, max=1)
 class FrameLike(Protocol):
     """The microscope that acquires images of a sample."""
 
@@ -100,7 +87,6 @@ class SegmenterLike(Protocol):
         ...
 
 
-# TODO: set app=... to the real analyzer app identifier once it is available.
 @declare(app="analyzer")
 class AnalyzerLike(Protocol):
     """An analysis app that quantifies staining from a segmentation mask."""
@@ -111,22 +97,14 @@ class AnalyzerLike(Protocol):
 
 
 # --- Structured input model -------------------------------------------------
-# The withStateChoices paths reference the @register parameter names below
-# (`opentrons` and `robot`) followed by the declared-state attribute and field.
 
 
 @model
 class Slide:
     name: Annotated[str, withDescription("Display name of the slide.")]
     protocol: Annotated[
-        str,
-        withStateChoices("opentrons.run.available_protocols"),
-        withDescription("The Opentrons washing protocol to run for this slide."),
-    ]
-    trajectory: Annotated[
-        str,
-        withStateChoices("robot.trajectories.available_trajectories"),
-        withDescription("The Arkirino trajectory to reach this slide in the tray."),
+        Literal["washing", "staining"],
+        withDescription("The Opentrons protocol to run for this slide."),
     ]
 
 
@@ -136,11 +114,11 @@ class Slide:
 class SlideStatus:
     """The stages a slide moves through during the concurrent staining workflow."""
 
-    QUEUED = "queued"  # waiting to be imaged
-    IMAGING = "imaging"  # on the microscope, acquiring tiles
-    ANALYZING = "analyzing"  # stitch -> segment -> quantify running in the background
-    STAINING = "staining"  # on the Opentrons being stained
-    DONE = "done"  # reached target stain (or exhausted its staining rounds)
+    QUEUED = "queued"
+    IMAGING = "imaging"
+    ANALYZING = "analyzing"
+    STAINING = "staining"
+    DONE = "done"
 
 
 @state
@@ -176,14 +154,14 @@ async def startup_hook() -> AppState:
 # --- Helpers ----------------------------------------------------------------
 
 
-async def _carry_slide(
-    robot: ArkirinoLike, from_trajectory: str, to_trajectory: str
+async def _run_protocol(
+    opentrons: OT2Like, protocol: Literal["washing", "staining"]
 ) -> None:
-    """Pick the slide up at ``from_trajectory`` and release it at ``to_trajectory``."""
-    await robot.run_trajectory(from_trajectory)
-    await robot.grip()
-    await robot.run_trajectory(to_trajectory)
-    await robot.ungrip()
+    """Dispatch to the correct Opentrons protocol function."""
+    if protocol == "washing":
+        await opentrons.run_washing_protocol()
+    else:
+        await opentrons.run_staining_protocol()
 
 
 async def _scan_tiles(
@@ -202,22 +180,12 @@ async def _scan_tiles(
 
 @register
 async def run_stainstorm(
-    robot: ArkirinoLike,
+    robot: FarinoLike,
     opentrons: OT2Like,
     microscope: FrameLike,
     segmenter: SegmenterLike,
     analyzer: AnalyzerLike,
     loaded_slides: list[Slide],
-    microscope_trajectory: Annotated[
-        str,
-        withStateChoices("robot.trajectories.available_trajectories"),
-        withDescription("The Arkirino trajectory to reach the microscope."),
-    ],
-    opentrons_trajectory: Annotated[
-        str,
-        withStateChoices("robot.trajectories.available_trajectories"),
-        withDescription("The Arkirino trajectory to reach the Opentrons."),
-    ],
     max_iterations: int = 5,
 ) -> AsyncGenerator[Image, None]:
     """Iteratively image, segment and wash each slide until it is sufficiently destained.
@@ -229,11 +197,11 @@ async def run_stainstorm(
     """
 
     for slide in loaded_slides:
-        # Fetch the slide from the tray and carry it to the microscope.
-        await _carry_slide(robot, slide.trajectory, microscope_trajectory)
+        # Pick from tray and carry to the microscope.
+        await robot.pickup_slide_from_pickupstation()
+        await robot.move_slide_to_microscope()
         await microscope.move_to_position("imaging_position")
 
-        # Initial acquisition and segmentation.
         image = await microscope.acquire_image()
         yield image
         segmented = await segmenter.segment_image(image)
@@ -242,12 +210,14 @@ async def run_stainstorm(
 
         iteration = 0
         while stain > 0.8 and iteration < max_iterations:
-            # Carry the slide to the Opentrons and run the washing protocol.
-            await _carry_slide(robot, microscope_trajectory, opentrons_trajectory)
-            await opentrons.run_protocol(slide.protocol)
+            # Carry to Opentrons and run the washing/staining protocol.
+            await robot.pickup_slide_from_microscope()
+            await robot.move_slide_to_opentron()
+            await _run_protocol(opentrons, slide.protocol)
 
-            # Bring it back to the microscope and re-image.
-            await _carry_slide(robot, opentrons_trajectory, microscope_trajectory)
+            # Bring back to microscope and re-image.
+            await robot.pickup_slide_from_opentron()
+            await robot.move_slide_to_microscope()
 
             image = await microscope.acquire_image()
             yield image
@@ -261,13 +231,14 @@ async def run_stainstorm(
         if iteration == max_iterations:
             log("Reached maximum iterations without sufficient staining.")
 
-        # Return the slide to its place in the tray.
-        await _carry_slide(robot, microscope_trajectory, slide.trajectory)
+        # Return the slide to the tray.
+        await robot.pickup_slide_from_microscope()
+        await robot.move_slide_to_pickupstation()
 
 
 @register
 async def run_concurrent_staining(
-    robot: ArkirinoLike,
+    robot: FarinoLike,
     opentrons: OT2Like,
     microscope: FrameLike,
     stitcher: StitcherLike,
@@ -275,16 +246,6 @@ async def run_concurrent_staining(
     analyzer: AnalyzerLike,
     state: AppState,
     loaded_slides: list[Slide],
-    microscope_trajectory: Annotated[
-        str,
-        withStateChoices("robot.trajectories.available_trajectories"),
-        withDescription("The Arkirino trajectory to reach the microscope."),
-    ],
-    opentrons_trajectory: Annotated[
-        str,
-        withStateChoices("robot.trajectories.available_trajectories"),
-        withDescription("The Arkirino trajectory to reach the Opentrons."),
-    ],
     tile_positions: Annotated[
         list[str],
         withDescription("The named stage positions to visit and image per slide."),
@@ -331,12 +292,14 @@ async def run_concurrent_staining(
         return stitched, segmented, percentage
 
     async def image_slide(slide: Slide) -> None:
-        """Serial physical op: scan the slide's tiles, return it, spawn compute."""
+        """Serial physical op: fetch slide, scan tiles, return it, spawn compute."""
         state.currently_imaging_slide = slide.name
         state.slide_status[slide.name] = SlideStatus.IMAGING
-        await _carry_slide(robot, slide.trajectory, microscope_trajectory)
+        await robot.pickup_slide_from_pickupstation()
+        await robot.move_slide_to_microscope()
         tiles = await _scan_tiles(microscope, tile_positions)
-        await _carry_slide(robot, microscope_trajectory, slide.trajectory)
+        await robot.pickup_slide_from_microscope()
+        await robot.move_slide_to_pickupstation()
         state.currently_imaging_slide = None
         state.slide_status[slide.name] = SlideStatus.ANALYZING
         compute[asyncio.ensure_future(analyze(tiles))] = slide
@@ -344,9 +307,11 @@ async def run_concurrent_staining(
     async def stain_slide(slide: Slide) -> None:
         """Serial physical op: carry the slide to the Opentrons and stain it."""
         state.slide_status[slide.name] = SlideStatus.STAINING
-        await _carry_slide(robot, slide.trajectory, opentrons_trajectory)
-        await opentrons.run_protocol(slide.protocol)
-        await _carry_slide(robot, opentrons_trajectory, slide.trajectory)
+        await robot.pickup_slide_from_pickupstation()
+        await robot.move_slide_to_opentron()
+        await _run_protocol(opentrons, slide.protocol)
+        await robot.pickup_slide_from_opentron()
+        await robot.move_slide_to_pickupstation()
 
     while physical or compute:
         # 1. Harvest any compute that has finished and decide on more staining.
@@ -386,5 +351,7 @@ async def run_concurrent_staining(
 
 
 if __name__ == "__main__":
-    with easy(identifier="stainstorm") as app:
+    load_dotenv()  # Load environment variables from .env file
+    redeem_token = os.getenv("REDEEM_TOKEN", None)
+    with easy(identifier="stainstorm", redeem_token=redeem_token) as app:
         app.run()

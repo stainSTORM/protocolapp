@@ -1,6 +1,0 @@
-author: jhnnsrs
-entrypoint: app
-identifier: protocolapp
-scopes:
-- read
-version: 0.2.0
